@@ -60,51 +60,142 @@ namespace Statistics
 
     static class Program
     {
+        static Visit[] visits;
+        static Unit[] units;
+        static UserSolutions[] solutions;
+        static Slide[] slides;
+        static DateTime beginning;
 
 
+
+        static void Clean<T>(ref T[] array, Func<T,bool> filter)
+        {
+            array = array.Where(filter).ToArray();
+        }
+
+        static void Load()
+        {
+            slides = Loader.Load<Slide>(@"..\..\..\slides.csv");
+
+            beginning = new DateTime(2014, 9, 6);
+
+            units = slides.Select(z => z.UnitTitle).Distinct().Select(z => new Unit { Title = z }).ToArray();
+            for (int i = 0; i < units.Length; i++)
+            {
+                units[i].Number = i;
+                if (i < 2) units[i].PublishingData = new DateTime(2014, 9, 6);
+                else units[i].PublishingData = new DateTime(2014, 9, 15).AddDays((i - 2) * 7);
+            }
+            foreach (var s in slides)
+                s.UnitData = units.Where(z => z.Title == s.UnitTitle).First();
+
+
+            visits = Loader.Load<Visit>(@"..\..\..\visits.csv");
+            solutions = Loader.Load<UserSolutions>(@"..\..\..\usersolutions.csv");
+
+            foreach (var e in visits)
+                e.SlideInfo = slides.Where(z => z.Id == e.SlideId).FirstOrDefault();
+
+            foreach(var e in solutions)
+                e.SlideInfo = slides.Where(z => z.Id == e.SlideId).FirstOrDefault();
+
+            Clean(ref visits, z => z.SlideInfo != null);
+            Clean(ref solutions, z => z.SlideInfo != null);
+        }
+
+
+        static Dictionary<string, double> UserDistribution<T>(bool show, IEnumerable<T> array, Func<T, bool> filter, Func<T, string> userSelector, Func<IEnumerable<T>, double> agregator, int compression)
+        {
+            var data = array
+              .Where(filter)
+              .GroupBy(userSelector)
+              .Select(z => new { UserId = z.Key, Value = agregator(z) })
+              .OrderBy(z => z.Value)
+              .ToDictionary(z => z.UserId, z => z.Value);
+
+            if (show)
+            {
+                data
+                  .GroupBy(z => (int)(z.Value / compression))
+                  .ShowHisto(z => z.Key * compression, z => z.Count());
+            }
+
+            return data;
+        }
+           
         /// <summary>
         /// The main entry point for the application.
         /// </summary>
         [STAThread]
         static void Main()
         {
-            var slides = Loader.Load<Slide>(@"..\..\..\slides.csv");
+            Load();
+
+            /*
+            //Исследуем, как по времени пользователи пользуются системой.
+
+            //количество заходов на слайд в зависимости от времени, прошедшего с начала семестра
+            visits
+                .GroupBy(z => (int)((z.TimeStamp - beginning).TotalDays)/7)
+                .Where(z=>z.Key>0)
+                .ShowHisto(z => z.Key, z => z.Count());
+
+
+            //Количество заходов на слайд в зависимости от времени, прошедшего с момента его публикации
+            visits
+                .GroupBy(z => (int)((z.TimeStamp - z.SlideInfo.UnitData.PublishingData).TotalDays)/7)
+                .Where(z=>z.Key>0)
+                .ShowHisto(z => z.Key, z => z.Count());
+            */
+
+            //В выборке до фига мусорных пользователей, которые курс до конца не то что не досмотрели, но даже не начали.
+            var usersToSlideCount = UserDistribution(false,
+                visits,
+                visit => visit.SlideInfo.Type == SlideType.Lecture,
+                visit => visit.UserId,
+                z => z.Count(),
+                10);
+            //нас будут интересовать только пользователи, которые посмотрели хотя бы 50 лекций
+            var interestingUsers = usersToSlideCount.Where(z => z.Value > 50).Select(z => z.Key).ToList();
+
+            //Распределение пользователей по запаздыванию захода на слайд
+            var usersToLatetime = UserDistribution(false,
+                visits,
+                visit=>interestingUsers.Contains(visit.UserId),
+                visit=>visit.UserId,
+                z=>z.Average(x => 1+(x.TimeStamp - x.SlideInfo.UnitData.PublishingData).TotalDays),
+                7);
+            //В основном пользователи, которые смотрели курс, смотрели его ВОВРЕМЯ, с запаздыванием до 1-2 недель. На всякий случай поставил отсечение на 40
+            interestingUsers = usersToLatetime.Where(z => z.Value < 40).Select(z => z.Key).ToList();
+
+            //После этих двух фильтраций у нас осталось 148 пользователей, что примерно совпадает с количеством студентов.
+            Clean(ref solutions, z => interestingUsers.Contains(z.UserId));
+            Clean(ref visits, z => interestingUsers.Contains(z.UserId));
+
+
+
+            var usersToExercise = UserDistribution(false,
+                solutions,
+                solution => solution.IsRightAnswer,
+                solution => solution.UserId,
+                z => z.Count(),
+                20);
+
+            //На сколько недель в среднем продвинулись пользователи в упражнениях?
+           UserDistribution(false,
+                solutions,
+                solution => true,
+                solution => solution.UserId,
+                z=>z.Max(x=>x.SlideInfo.UnitData.Number),
+                1);
+
            
-            var visits = Loader.Load<Visit>(@"..\..\..\visits.csv");
-           var solutions = Loader.Load<UserSolutions>(@"..\..\..\usersolutions.csv");
-           
-            foreach(var e in visits)
-                e.SlideInfo = slides.Where(z=>z.Id==e.SlideId).FirstOrDefault();
+           solutions
+               .GroupBy(z => z.SlideInfo)
+               .ShowHisto(z => z.Key.Number, z => z.Count() - z.Count(x=>x.IsRightAnswer));
+            
 
-            visits=visits.Where(z=>z.SlideInfo!=null).ToArray();
 
-            //visits
-            //    .GroupBy(z => z.UserId)
-            //    .Select(z => new { UserId = z.Key, Count = z.Count()})
-            //    .GroupBy(z => z.Count/10)
-            //    .Select(z => new { CountOfTasks = 10*z.Key, CountOfUsers = z.Count() })
-            //    .OrderBy(z=>z.CountOfTasks)
-            //    .Skip(3)
-            //    .ShowHisto(z => z.CountOfTasks, z => z.CountOfUsers);
-
-            var lastSlides =
-                visits
-                .GroupBy(z => z.UserId)
-                .Select(z => new { UserId = z.Key, Last = z.ArgMax(x => x.SlideInfo.Number) })
-                .GroupBy(z => z.Last.SlideInfo.Number)
-                .Select(z => new { LastTask = z.Key, CountOfUsers = z.Count() })
-                .ToArray();
-
-            lastSlides
-                .OrderBy(z => z.LastTask)
-                .ShowHisto(z => z.LastTask, z => z.CountOfUsers);
-
-            //var hardProblems =
-            //    lastSlides
-            //    .OrderByDescending(z => z.CountOfUsers)
-            //    .Take(20)
-            //    .Select(z => z.LastTask.SlideInfo.Caption)
-            //    .ToArray();
         }
     }
 }

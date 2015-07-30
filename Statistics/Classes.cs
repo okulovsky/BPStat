@@ -7,10 +7,13 @@ using System.Threading.Tasks;
 
 namespace Statistics
 {
+
+
     public interface IReadable
     {
         void Load(string[] data);
     }
+
 	public class Visit : IReadable
 	{
         public string SlideId { get; set; }
@@ -43,6 +46,8 @@ namespace Statistics
         public bool IsCompilationError { get; set; }
         public string UserId { get; set; }
 
+        public Slide SlideInfo { get; set;  }
+
         public void Load(string[] data)
         {
             SlideId = data[0];
@@ -53,21 +58,47 @@ namespace Statistics
         }
     }
 
+    public enum SlideType
+    {
+        Lecture,
+        Quiz,
+        Exercise
+    }
+
+    public class Unit
+    {
+        public string Title { get; set; }
+        public int Number { get; set; }
+        public DateTime PublishingData { get; set; }
+
+    }
+
     public class Slide : IReadable
     {
         public int Number { get; set; }
         public string Id { get; set; }
         public string Caption { get; set; }
-        public string Unit { get; set; }
+        public string UnitTitle { get; set; }
+
+        public Unit UnitData { get; set; }
+
+        public SlideType Type { get; set; }
 
         public void Load(string[] data)
         {
             Number = int.Parse(data[0]);
             Id = data[1];
             Caption = data[2];
-            Unit = data[3];
+            UnitTitle = data[3];
+            if (data[4] == "QuizSlide") Type = SlideType.Quiz;
+            else if (data[4] == "ExerciseSlide") Type = SlideType.Exercise;
+            else Type = SlideType.Lecture;
         }
 
+        public override string ToString()
+        {
+            return "[" + Type + "]" + Caption + " (" + UnitTitle + ")";
+        }
 
     }
 
