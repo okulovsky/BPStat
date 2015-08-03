@@ -35,7 +35,7 @@ namespace Statistics
 
 			//Мы будем учитывать только тех людей, которые посмотрели достаточно много лекций с не слишком большим опозданием
 			foreach (var e in userData)
-				e.Value.GoodUser = e.Value.LecturesViewsLate < 40 && e.Value.ViewedLecturesCount > 50;
+				e.Value.GoodUser = e.Value.LecturesViewsLate > 40 && e.Value.ViewedLecturesCount > 50;
 
 			var goodUsersCount = userData.Count(z => z.Value.GoodUser);
 			//Их 160 человек
@@ -47,6 +47,7 @@ namespace Statistics
 			//userData.ShowDistribution(z => z.Value.SolvedExerciseCount, z => z.Value.GoodUser, 5);
 			//Я вижу тут нормальное распределение в центре с 25 + упорные, которые доходят до конца. 
 			//Учитывая, что у нас всего в 13 лекциях есть задачи, оптимумом является решение по 2 задачи в лекцию.
+
 
 			PrepareExercises();
 
@@ -61,7 +62,8 @@ namespace Statistics
 
 			//Собирательная статистика по задачам
 			exercisesData
-				.OrderByDescending(z=>z.Value.Fails)
+                .OrderBy(z=>z.Key.Number)
+//				.OrderByDescending(z=>z.Value.Fails)
 				.Prepare("Заголовок         ", "Unit", "Fail", "Attem", "Pop", "Brkdwn")
 				.Output(false,
 				z => z.Key.Caption,
@@ -70,6 +72,31 @@ namespace Statistics
 				z => z.Value.AverageAttempts,
 				z => z.Value.Popularity,
 				z => z.Value.CountOfBreakdownTimes);
+
+
+            Console.WriteLine("\n\n");
+            visits
+                .Where(z=>z.SlideInfo.Type == SlideType.Quiz && userData[z.UserId].GoodUser)
+                .GroupBy(z=>z.SlideInfo)
+                .Select(z=>new 
+                    { 
+                        Quiz = z.Key, 
+                        Replies = z.Count(), 
+                        Users = z.Select(x=>x.UserId).Distinct().Count(),
+                        RightAnswers  = z.Count(x=>x.IsPassed)
+                    })
+                //.OrderByDescending(x=>x.RightAnswers)
+                .OrderBy(x=>x.Quiz.Number)
+                .Prepare("Заголовок                ","Unit","Reps","Users","Answers", "Succ%")
+                .Output(false,
+                    z=>z.Quiz.Caption,
+                    z=>z.Quiz.UnitData.Number,
+                    z=>z.Replies,
+                    z=>z.Users,
+                    z=>z.RightAnswers,
+                    z=>(double)z.RightAnswers/z.Users
+                    );
+                    
 
 		}
 
